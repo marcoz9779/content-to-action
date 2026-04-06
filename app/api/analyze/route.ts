@@ -5,10 +5,7 @@ import { detectPlatform } from "@/lib/source/detect-platform";
 import { processJob } from "@/lib/jobs/processor";
 import { trackEvent } from "@/lib/analytics/track";
 import { checkRateLimit, getRateLimitKey, RATE_LIMITS } from "@/lib/security/rate-limit";
-import type { ApiError } from "@/types";
-
-// Allow up to 60 seconds for processing (Vercel Pro: 300s)
-export const maxDuration = 60;
+import type { AnalyzeResponse, ApiError } from "@/types";
 
 export async function POST(request: NextRequest) {
   try {
@@ -67,33 +64,12 @@ export async function POST(request: NextRequest) {
 
     void trackEvent("analysis_started", { jobId: job.id, sourceType, platform });
 
-    // Process job SYNCHRONOUSLY — Vercel kills background tasks after response
-    await processJob(job.id);
+    // Process job asynchronously (works on persistent servers like localhost)
+    void processJob(job.id);
 
-    // Fetch the result ID after processing
-    const { data: completedJob } = await supabase
-      .from("analysis_jobs")
-      .select("status, error_message")
-      .eq("id", job.id)
-      .single<{ status: string; error_message: string | null }>();
-
-    if (completedJob?.status === "failed") {
-      return NextResponse.json<ApiError>(
-        { error: completedJob.error_message ?? "Analyse fehlgeschlagen." },
-        { status: 500 }
-      );
-    }
-
-    const { data: result } = await supabase
-      .from("analysis_results")
-      .select("id")
-      .eq("job_id", job.id)
-      .single<{ id: string }>();
-
-    return NextResponse.json({
+    return NextResponse.json<AnalyzeResponse>({
       jobId: job.id,
-      status: completedJob?.status ?? "completed",
-      resultId: result?.id ?? null,
+      status: "queued",
     });
   } catch (error) {
     console.error("Analyze error:", error);
