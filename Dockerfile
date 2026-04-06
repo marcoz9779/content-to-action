@@ -1,6 +1,19 @@
-FROM node:20-slim
+FROM node:20-slim AS builder
 
-# Install yt-dlp, ffmpeg, Python
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY . .
+
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN npm run build
+
+# --- Production ---
+FROM node:20-slim AS runner
+
+# Install yt-dlp, ffmpeg
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     python3 \
@@ -13,28 +26,20 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Install ALL dependencies (including devDeps for Tailwind)
-COPY package.json package-lock.json ./
-RUN npm ci
-
-COPY . .
-
-# Build args for NEXT_PUBLIC_ vars (Railway injects these)
-ARG NEXT_PUBLIC_SUPABASE_URL
-ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
-ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
-ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
+ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV YT_DLP_PATH=/usr/local/bin/yt-dlp
 ENV FFMPEG_PATH=/usr/bin/ffmpeg
-
-# Build Next.js (generates CSS + bundles)
-RUN npm run build
-
-ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 
+# Copy standalone server
+COPY --from=builder /app/.next/standalone ./
+# Copy static assets (CSS, JS, images)
+COPY --from=builder /app/.next/static ./.next/static
+# Copy public folder
+COPY --from=builder /app/public ./public
+
 EXPOSE 3000
 
-CMD ["npm", "start"]
+CMD ["node", "server.js"]
