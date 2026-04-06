@@ -26,6 +26,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import { AppleRemindersExport } from "@/components/shopping/apple-reminders-export";
 import { NearbyStores } from "@/components/shopping/nearby-stores";
+import { getIngredientEmoji } from "@/lib/utils/ingredient-emojis";
 import type { RecipeOutput } from "@/types";
 
 // ---------------------------------------------------------------------------
@@ -298,6 +299,9 @@ function ItemCard({
           )}
         </AnimatePresence>
 
+        {/* Emoji */}
+        <span className="text-2xl mb-0.5">{getIngredientEmoji(item.name)}</span>
+
         {/* Quantity badge */}
         {item.quantity && (
           <Badge
@@ -309,7 +313,7 @@ function ItemCard({
         )}
 
         <span
-          className={`text-center text-sm font-medium leading-tight ${
+          className={`text-center text-xs font-medium leading-tight ${
             item.checked ? "line-through text-muted-foreground" : ""
           }`}
         >
@@ -1295,9 +1299,7 @@ export default function ShoppingListPage() {
                       idx > 0 ? "border-t border-border/50" : ""
                     }`}
                   >
-                    <span
-                      className={`h-2 w-2 rounded-full ${getCategoryStyle(cat)}`}
-                    />
+                    <span className="text-lg">{getIngredientEmoji(name)}</span>
                     <span className="flex-1">{name}</span>
                     <span className="text-xs text-muted-foreground">{cat}</span>
                   </button>
