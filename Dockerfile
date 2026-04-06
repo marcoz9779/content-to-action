@@ -13,16 +13,22 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
+# Install ALL dependencies (including devDeps for Tailwind)
 COPY package.json package-lock.json ./
-RUN NODE_ENV=development npm ci
+RUN npm ci
 
 COPY . .
 
+# Build args for NEXT_PUBLIC_ vars (Railway injects these)
+ARG NEXT_PUBLIC_SUPABASE_URL
+ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
+ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
+ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV YT_DLP_PATH=/usr/local/bin/yt-dlp
 ENV FFMPEG_PATH=/usr/bin/ffmpeg
 
-# Build needs NEXT_PUBLIC_ vars — Railway injects them at build time
+# Build Next.js (generates CSS + bundles)
 RUN npm run build
 
 ENV NODE_ENV=production
