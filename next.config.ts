@@ -1,9 +1,7 @@
 import type { NextConfig } from "next";
 
-const isCapacitor = process.env.BUILD_TARGET === "capacitor";
-
 const nextConfig: NextConfig = {
-  ...(isCapacitor ? { output: "export" } : {}),
+  output: "standalone",
   experimental: {
     serverActions: {
       bodySizeLimit: "10mb",
@@ -20,8 +18,19 @@ const nextConfig: NextConfig = {
         protocol: "https",
         hostname: "spoonacular.com",
       },
+      {
+        protocol: "https",
+        hostname: "*.tiktokcdn.com",
+      },
+      {
+        protocol: "https",
+        hostname: "*.ytimg.com",
+      },
+      {
+        protocol: "https",
+        hostname: "*.cdninstagram.com",
+      },
     ],
-    ...(isCapacitor ? { unoptimized: true } : {}),
   },
 };
 

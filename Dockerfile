@@ -1,6 +1,6 @@
-FROM node:20-slim
+FROM node:20-slim AS base
 
-# Install yt-dlp, ffmpeg, and Python (required by yt-dlp)
+# Install yt-dlp, ffmpeg, Python
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     python3 \
@@ -11,29 +11,30 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+# --- Builder stage ---
+FROM base AS builder
 WORKDIR /app
-
-# Copy package files
 COPY package.json package-lock.json ./
-
-# Install dependencies
 RUN npm ci
-
-# Copy source code
 COPY . .
-
-# Set yt-dlp and ffmpeg paths for the app
-ENV YT_DLP_PATH=/usr/local/bin/yt-dlp
-ENV FFMPEG_PATH=/usr/bin/ffmpeg
 ENV NEXT_TELEMETRY_DISABLED=1
-
-# Build Next.js
 RUN npm run build
 
-# Expose port
-EXPOSE 3000
-
+# --- Runner stage ---
+FROM base AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV YT_DLP_PATH=/usr/local/bin/yt-dlp
+ENV FFMPEG_PATH=/usr/bin/ffmpeg
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 
-CMD ["npm", "start"]
+# Copy standalone build
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /app/public ./public
+
+EXPOSE 3000
+
+CMD ["node", "server.js"]
