@@ -6,6 +6,7 @@ import Image from "next/image";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useTranslation } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import {
   PageTransition,
@@ -342,6 +343,7 @@ interface ShoppingList {
 // ===========================================================================
 
 export default function PantryPage() {
+  const { locale } = useTranslation();
   // -----------------------------------------------------------------------
   // State
   // -----------------------------------------------------------------------
@@ -488,7 +490,7 @@ export default function PantryPage() {
     try {
       const ingredientsParam = items.join(",");
       const res = await fetch(
-        `/api/suggest-recipes?ingredients=${encodeURIComponent(ingredientsParam)}&count=12`
+        `/api/suggest-recipes?ingredients=${encodeURIComponent(ingredientsParam)}&count=12&lang=${locale}`
       );
       if (!res.ok) {
         setExternalAvailable(false);
@@ -618,7 +620,7 @@ export default function PantryPage() {
     setRecipeDetail(null);
     setIsLoadingDetail(true);
     try {
-      const res = await fetch(`/api/suggest-recipes/${recipe.id}`);
+      const res = await fetch(`/api/suggest-recipes/${recipe.id}?lang=${locale}`);
       if (!res.ok) throw new Error("Failed to load recipe detail");
       const data = (await res.json()) as { recipe: RecipeDetail };
       setRecipeDetail(data.recipe);

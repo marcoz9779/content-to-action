@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import OpenAI from "openai";
+import { getEnv } from "@/lib/security/env";
 import type { ApiError } from "@/types";
 
 interface SpoonacularRecipe {
@@ -36,11 +38,72 @@ interface RecipeSuggestion {
   source: "spoonacular";
 }
 
+const LANG_MAP: Record<string, string> = {
+  de: "German",
+  en: "English",
+  fr: "French",
+  it: "Italian",
+};
+
+async function translateRecipes(
+  recipes: RecipeSuggestion[],
+  targetLang: string
+): Promise<RecipeSuggestion[]> {
+  if (targetLang === "en" || recipes.length === 0) return recipes;
+
+  try {
+    const env = getEnv();
+    const client = new OpenAI({ apiKey: env.OPENAI_API_KEY });
+
+    const toTranslate = recipes.map((r) => ({
+      id: r.id,
+      title: r.title,
+      missing: r.missingIngredients,
+      used: r.usedIngredients,
+    }));
+
+    const response = await client.chat.completions.create({
+      model: env.OPENAI_MODEL_CLASSIFY,
+      messages: [
+        {
+          role: "user",
+          content: `Translate these recipe titles and ingredient names to ${LANG_MAP[targetLang] ?? "German"}. Return ONLY valid JSON array, same structure. Keep the id field unchanged.
+
+${JSON.stringify(toTranslate)}`,
+        },
+      ],
+      temperature: 0.1,
+      response_format: { type: "json_object" },
+    });
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) return recipes;
+
+    const parsed = JSON.parse(content) as { recipes?: Array<{ id: number; title: string; missing: string[]; used: string[] }> } | Array<{ id: number; title: string; missing: string[]; used: string[] }>;
+    const translated = Array.isArray(parsed) ? parsed : (parsed.recipes ?? []);
+
+    return recipes.map((recipe) => {
+      const t = translated.find((tr) => tr.id === recipe.id);
+      if (!t) return recipe;
+      return {
+        ...recipe,
+        title: t.title ?? recipe.title,
+        missingIngredients: t.missing ?? recipe.missingIngredients,
+        usedIngredients: t.used ?? recipe.usedIngredients,
+      };
+    });
+  } catch (error) {
+    console.error("Translation failed:", error);
+    return recipes;
+  }
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const ingredients = searchParams.get("ingredients");
     const count = Math.min(parseInt(searchParams.get("count") ?? "12"), 20);
+    const lang = searchParams.get("lang") ?? "de";
 
     if (!ingredients) {
       return NextResponse.json<ApiError>({ error: "Missing ingredients parameter." }, { status: 400 });
@@ -49,14 +112,12 @@ export async function GET(request: NextRequest) {
     const apiKey = process.env.SPOONACULAR_API_KEY;
 
     if (!apiKey) {
-      // Fallback: Return empty results if no API key configured
       return NextResponse.json({ recipes: [], source: "none", message: "Spoonacular API key not configured." });
     }
 
-    // Call Spoonacular "Find by Ingredients" API
     const url = `https://api.spoonacular.com/recipes/findByIngredients?ingredients=${encodeURIComponent(ingredients)}&number=${count}&ranking=2&ignorePantry=true&apiKey=${apiKey}`;
 
-    const response = await fetch(url, { next: { revalidate: 3600 } }); // Cache for 1 hour
+    const response = await fetch(url, { next: { revalidate: 3600 } });
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -71,7 +132,7 @@ export async function GET(request: NextRequest) {
 
     const data = (await response.json()) as SpoonacularRecipe[];
 
-    const recipes: RecipeSuggestion[] = data.map((r) => {
+    let recipes: RecipeSuggestion[] = data.map((r) => {
       const totalCount = r.usedIngredientCount + r.missedIngredientCount;
       return {
         id: r.id,
@@ -87,8 +148,10 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    // Sort by best match
     recipes.sort((a, b) => b.matchPercent - a.matchPercent || a.missedCount - b.missedCount);
+
+    // Translate to target language
+    recipes = await translateRecipes(recipes, lang);
 
     return NextResponse.json({ recipes, source: "spoonacular" });
   } catch (error) {
