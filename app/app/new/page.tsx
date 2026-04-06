@@ -97,13 +97,20 @@ export default function NewAnalysisPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const data = (await response.json()) as { jobId: string } | { error: string; details?: string };
+      const data = (await response.json()) as { jobId: string; resultId?: string; status?: string } | { error: string; details?: string };
       if (!response.ok) {
         const errorData = data as { error: string; details?: string };
         setError(errorData.details ?? errorData.error);
         return;
       }
-      router.push(`/app/jobs/${(data as { jobId: string }).jobId}`);
+      const successData = data as { jobId: string; resultId?: string; status?: string };
+      // If processing completed synchronously (Vercel), go directly to result
+      if (successData.resultId) {
+        router.push(`/app/results/${successData.resultId}`);
+      } else {
+        // Fallback to polling page (local dev with async processing)
+        router.push(`/app/jobs/${successData.jobId}`);
+      }
     } catch {
       setError(t.newAnalysis.errorGeneric);
     } finally {
@@ -185,7 +192,9 @@ export default function NewAnalysisPage() {
             {/* Caption hint — important for URL analysis */}
             {sourceUrl.trim() && !captionText.trim() && !uploadPath && (
               <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
-                <strong>Tipp:</strong> Füge den Caption-Text des Videos hinzu für die beste Analyse-Qualität. Kopiere die Beschreibung/Caption des Posts und füge sie unten ein.
+                <strong>Tipp:</strong> {sourceUrl.includes("instagram.com")
+                  ? "Instagram-Videos benötigen den Caption-Text. Kopiere die Beschreibung des Posts und füge sie unten ein."
+                  : "Füge den Caption-Text des Videos hinzu für die beste Analyse-Qualität."}
               </div>
             )}
 

@@ -5,7 +5,10 @@ import { detectPlatform } from "@/lib/source/detect-platform";
 import { processJob } from "@/lib/jobs/processor";
 import { trackEvent } from "@/lib/analytics/track";
 import { checkRateLimit, getRateLimitKey, RATE_LIMITS } from "@/lib/security/rate-limit";
-import type { AnalyzeResponse, ApiError } from "@/types";
+import type { ApiError } from "@/types";
+
+// Allow up to 60 seconds for processing (Vercel Pro: 300s)
+export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
   try {
@@ -16,6 +19,7 @@ export async function POST(request: NextRequest) {
         { status: 429, headers: { "Retry-After": String(Math.ceil((rateLimitResult.resetAt - Date.now()) / 1000)) } }
       );
     }
+
     const body = (await request.json()) as unknown;
     const parsed = analyzeRequestSchema.safeParse(body);
 
@@ -61,20 +65,35 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Track event
-    void trackEvent("analysis_started", {
-      jobId: job.id,
-      sourceType,
-      platform,
-    });
+    void trackEvent("analysis_started", { jobId: job.id, sourceType, platform });
 
-    // Start processing asynchronously (fire and forget)
-    // In production, this would be a queue job
-    void processJob(job.id);
+    // Process job SYNCHRONOUSLY — Vercel kills background tasks after response
+    await processJob(job.id);
 
-    return NextResponse.json<AnalyzeResponse>({
+    // Fetch the result ID after processing
+    const { data: completedJob } = await supabase
+      .from("analysis_jobs")
+      .select("status, error_message")
+      .eq("id", job.id)
+      .single<{ status: string; error_message: string | null }>();
+
+    if (completedJob?.status === "failed") {
+      return NextResponse.json<ApiError>(
+        { error: completedJob.error_message ?? "Analyse fehlgeschlagen." },
+        { status: 500 }
+      );
+    }
+
+    const { data: result } = await supabase
+      .from("analysis_results")
+      .select("id")
+      .eq("job_id", job.id)
+      .single<{ id: string }>();
+
+    return NextResponse.json({
       jobId: job.id,
-      status: "queued",
+      status: completedJob?.status ?? "completed",
+      resultId: result?.id ?? null,
     });
   } catch (error) {
     console.error("Analyze error:", error);
