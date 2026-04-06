@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Content to Action</string>
+    <string name="title_activity_main">Content to Action</string>
+    <string name="package_name">com.voltastudio.contenttoaction</string>
+    <string name="custom_url_scheme">com.voltastudio.contenttoaction</string>
+</resources>
