@@ -35,10 +35,10 @@ async function binaryExists(binPath: string): Promise<boolean> {
  * Supports YouTube, TikTok, Instagram.
  */
 async function resolveViaOEmbed(url: string): Promise<{ title: string | null; thumbnailUrl: string | null; creator: string | null; caption: string | null }> {
+  // Try oEmbed endpoints
   const oembedEndpoints = [
     { match: /youtube\.com|youtu\.be/, endpoint: `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json` },
     { match: /tiktok\.com/, endpoint: `https://www.tiktok.com/oembed?url=${encodeURIComponent(url)}` },
-    { match: /instagram\.com/, endpoint: `https://api.instagram.com/oembed?url=${encodeURIComponent(url)}` },
   ];
 
   for (const { match, endpoint } of oembedEndpoints) {
@@ -47,20 +47,49 @@ async function resolveViaOEmbed(url: string): Promise<{ title: string | null; th
       const response = await fetch(endpoint, { signal: AbortSignal.timeout(10000) });
       if (!response.ok) continue;
       const data = (await response.json()) as Record<string, unknown>;
-      // TikTok oEmbed returns the full caption in the title field
       const title = (data.title as string) ?? null;
-      const caption = (data.html as string)
-        ? title // TikTok: title IS the caption
-        : null;
       return {
         title,
         thumbnailUrl: (data.thumbnail_url as string) ?? null,
         creator: (data.author_name as string) ?? null,
-        caption,
+        caption: title,
       };
     } catch {
       continue;
     }
+  }
+
+  // Fallback: Try to fetch page HTML and extract og:title/og:description
+  try {
+    const response = await fetch(url, {
+      signal: AbortSignal.timeout(10000),
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; ContentToAction/1.0)",
+      },
+    });
+    if (response.ok) {
+      const html = await response.text();
+      const ogTitle = html.match(/<meta[^>]*property="og:title"[^>]*content="([^"]*)"/) ??
+                      html.match(/<meta[^>]*content="([^"]*)"[^>]*property="og:title"/);
+      const ogDesc = html.match(/<meta[^>]*property="og:description"[^>]*content="([^"]*)"/) ??
+                     html.match(/<meta[^>]*content="([^"]*)"[^>]*property="og:description"/);
+      const ogImage = html.match(/<meta[^>]*property="og:image"[^>]*content="([^"]*)"/) ??
+                      html.match(/<meta[^>]*content="([^"]*)"[^>]*property="og:image"/);
+
+      const title = ogTitle?.[1] ?? null;
+      const description = ogDesc?.[1] ?? null;
+
+      if (title || description) {
+        return {
+          title,
+          thumbnailUrl: ogImage?.[1] ?? null,
+          creator: null,
+          caption: description ?? title,
+        };
+      }
+    }
+  } catch {
+    // Ignore fallback errors
   }
 
   return { title: null, thumbnailUrl: null, creator: null, caption: null };
